@@ -1,0 +1,8 @@
+/target
+Cargo.lock
+*.json
+*.sqlite
+*.log
+*.txt
+.idea
+chrome-data*
