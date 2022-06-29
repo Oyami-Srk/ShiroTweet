@@ -78,7 +78,6 @@ fn run_downloader<P: AsRef<Path>>(twdb: P, dest_dir: P) -> Result<()> {
                 row.get::<_, String>(1).unwrap(),
             ))
         })?
-        .take(10)
         .filter_map(|v| {
             let (author, url) = v.unwrap();
             let url = if is_need_orig(&url) {
@@ -95,13 +94,6 @@ fn run_downloader<P: AsRef<Path>>(twdb: P, dest_dir: P) -> Result<()> {
             }
         })
         .collect();
-
-    // test
-    tasks.push(DownloadTask {
-        url: "https://pbs.twimg.com/media/FR0utoaakaAUgnee.jpg?name=orig".to_string(),
-        path: "test".into(),
-        filename: Some("test.jpg".to_string()),
-    });
 
     let mut unrecoverables: Vec<DownloadTask> = vec![];
 
