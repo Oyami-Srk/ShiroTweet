@@ -1,22 +1,14 @@
 use super::twitter_def;
 use super::utils::Error;
 use anyhow::Result;
-use headless_chrome::browser::tab::RequestPausedDecision;
-use headless_chrome::browser::transport::{SessionId, Transport};
-use headless_chrome::protocol::cdp::Fetch::events::RequestPausedEvent;
-use headless_chrome::protocol::cdp::Fetch::RequestStage::Request;
-use headless_chrome::protocol::cdp::Fetch::{
-    ContinueRequest, HeaderEntry, RequestPattern, RequestStage,
-};
-use headless_chrome::protocol::cdp::Network::events::RequestInterceptedEvent;
-use headless_chrome::protocol::cdp::Network::{GetResponseBodyReturnObject, ResourceType};
-use headless_chrome::{browser::LaunchOptionsBuilder, Browser, LaunchOptions};
-use indicatif::ProgressBar;
+use headless_chrome::protocol::cdp::Fetch::{RequestPattern, RequestStage};
+use headless_chrome::protocol::cdp::Network::ResourceType;
+use headless_chrome::{Browser, LaunchOptions};
 use lazy_static::lazy_static;
 use regex::Regex;
 use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::sync::{mpsc, Arc};
+use std::path::Path;
+use std::sync::mpsc;
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -204,7 +196,7 @@ impl TweetFetcher {
                         retries_counter += 1;
                         sleep(Duration::from_millis(500));
                     };
-                    tx.send(body.body);
+                    tx.send(body.body).unwrap();
                 }
             }),
         )?;
@@ -212,9 +204,9 @@ impl TweetFetcher {
         tab.navigate_to(url)?;
         let recv_result = rx.recv_timeout(Duration::from_secs(30));
         if let Ok(body) = recv_result {
-            tab.stop_loading();
-            tab.disable_fetch();
-            tab.deregister_response_handling_all();
+            tab.stop_loading().unwrap();
+            tab.disable_fetch().unwrap();
+            tab.deregister_response_handling_all().unwrap();
             if !body.starts_with('{') {
                 if body.contains("limit") {
                     Err(Error::RateLimitExceeded.into())
@@ -226,7 +218,7 @@ impl TweetFetcher {
                 }
             } else {
                 let obj: serde_json::Value = serde_json::from_str(body.as_str())
-                    .map_err(|v| Error::TweetJsonSchemaInvalid)?;
+                    .map_err(|_v| Error::TweetJsonSchemaInvalid)?;
                 let obj = obj.as_object().ok_or(Error::TweetJsonSchemaInvalid)?;
                 if obj.contains_key("errors") {
                     for error in obj["errors"]
@@ -268,10 +260,13 @@ impl TweetFetcher {
         }
     }
 
+    #[allow(dead_code)]
     pub fn sleep(&self, dur: Duration) -> Result<()> {
         let tab = self.browser_instance.wait_for_initial_tab()?;
         tab.stop_loading()?;
-        headless_chrome::util::Wait::with_sleep(dur).until::<_, u64>(|| None);
+        headless_chrome::util::Wait::with_sleep(dur)
+            .until::<_, u64>(|| None)
+            .unwrap();
         Ok(())
     }
 }

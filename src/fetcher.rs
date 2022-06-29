@@ -1,6 +1,3 @@
-#![allow(unused)]
-#![allow(dead_code)]
-
 use crate::tweet_db::{Media, ThreadInfo, Tweet, TweetDB, TweetFailReason};
 use crate::tweet_fetcher::{TweetDownloadDB, TweetFetcher};
 use crate::utils::{extract_twitter_url, Error};
@@ -9,14 +6,10 @@ use lazy_static::lazy_static;
 use log::{info, LevelFilter};
 use rayon::prelude::*;
 use regex::Regex;
-use rusqlite::params;
-use std::collections::HashMap;
 use std::io;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::thread::sleep;
-use std::time::Duration;
 
 mod tweet_db;
 mod tweet_fetcher;
@@ -305,7 +298,7 @@ fn run_url_downloader<P: AsRef<Path>>(
             info!("Clear old download db entries.");
             remaining.iter().for_each(|url| {
                 let id = extract_twitter_url(url).unwrap().1;
-                dldb.remove(id);
+                dldb.remove(id).unwrap();
             });
             info!("Run fetcher");
             let total_len = remaining.len();

@@ -1,9 +1,9 @@
 use crate::tweet_db::TweetFailReason;
 use crate::twitter_def;
-use lazy_static::lazy_static;
 use std::fmt::{Display, Formatter};
 
 #[derive(Debug)]
+#[allow(unused)]
 pub enum Error {
     CustomError { msg: String },
     LoginFailed { msg: String },

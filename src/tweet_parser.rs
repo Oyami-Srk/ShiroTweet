@@ -1,22 +1,18 @@
 use crate::tweet_db::{Media, ThreadInfo, Tweet};
 use crate::twitter_def;
 use crate::utils::Error;
-use anyhow::private::kind::TraitKind;
 use anyhow::Result;
 use chrono::DateTime;
-use headless_chrome::protocol::cdp::IndexedDB::KeyType::Date;
-use log::{debug, error, trace, warn};
+use log::{error, trace, warn};
 use serde::Deserialize;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::fmt::Formatter;
-use std::time::SystemTime;
-
-pub struct TweetParser;
 
 type JObj = serde_json::Value;
 type JRawValue = serde_json::value::RawValue;
 
 #[derive(Deserialize)]
+#[allow(unused)]
 pub struct TweetMediaOriginalInfo {
     pub height: u64,
     pub width: u64,
@@ -27,6 +23,7 @@ fn default_bitrate() -> u64 {
 }
 
 #[derive(Deserialize)]
+#[allow(unused)]
 pub struct TweetVideoInfoVariant {
     #[serde(default = "default_bitrate")]
     pub bitrate: u64,
@@ -34,11 +31,13 @@ pub struct TweetVideoInfoVariant {
 }
 
 #[derive(Deserialize)]
+#[allow(unused)]
 pub struct TweetVideoInfo {
     pub variants: Vec<TweetVideoInfoVariant>,
 }
 
 #[derive(Deserialize)]
+#[allow(unused)]
 pub struct TweetMedia {
     pub display_url: String,
     pub expanded_url: String,
@@ -56,12 +55,14 @@ pub struct TweetMedia {
 }
 
 #[derive(Deserialize)]
+#[allow(unused)]
 pub struct TweetHashTag {
     pub indices: Vec<u64>,
     pub text: String,
 }
 
 #[derive(Deserialize)]
+#[allow(unused)]
 pub struct TweetEntities {
     pub media: Option<Vec<TweetMedia>>,
     pub user_mentions: Option<Vec<Box<JRawValue>>>,
@@ -71,11 +72,13 @@ pub struct TweetEntities {
 }
 
 #[derive(Deserialize)]
+#[allow(unused)]
 pub struct TweetSelfThread {
     pub id_str: String,
 }
 
 #[derive(Deserialize)]
+#[allow(unused)]
 pub struct TweetLegacy {
     pub created_at: String,
     pub id_str: String,
@@ -103,12 +106,14 @@ pub struct TweetLegacy {
 }
 
 #[derive(Deserialize)]
+#[allow(unused)]
 pub struct TweetUserLegacy {
     name: String,
     screen_name: String,
 }
 
 #[derive(Deserialize)]
+#[allow(unused)]
 pub struct TweetUser {
     #[serde(rename = "__typename")]
     typename: String,
@@ -339,7 +344,7 @@ pub fn extract_all_tweets(id: u64, obj: &JObj) -> Result<HashMap<u64, TweetItem>
             let id = tweet
                 .rest_id
                 .parse::<u64>()
-                .or_else(|v| Err(Error::TweetJsonSchemaInvalid))?;
+                .or_else(|_v| Err(Error::TweetJsonSchemaInvalid))?;
             tweets.insert(id, tweet);
         } else if content["entryType"] == "TimelineTimelineModule" {
             // multiple item
@@ -367,7 +372,7 @@ pub fn extract_all_tweets(id: u64, obj: &JObj) -> Result<HashMap<u64, TweetItem>
                 let id = tweet
                     .rest_id
                     .parse::<u64>()
-                    .or_else(|v| Err(Error::TweetJsonSchemaInvalid))?;
+                    .or_else(|_v| Err(Error::TweetJsonSchemaInvalid))?;
                 tweets.insert(id, tweet);
             }
         } else {
@@ -380,7 +385,7 @@ pub fn extract_all_tweets(id: u64, obj: &JObj) -> Result<HashMap<u64, TweetItem>
         }
     }
 
-    if (!tweets.contains_key(&id)) {
+    if !tweets.contains_key(&id) {
         Err(Error::TweetJsonSchemaInvalid.into())
     } else {
         Ok(tweets)
@@ -400,11 +405,11 @@ pub fn get_thread(id: u64, tweets: &HashMap<u64, TweetItem>) -> Option<Vec<u64>>
 
     let with_same_id = tweets
         .iter()
-        .filter(|(tid, t)| {
+        .filter(|(_tid, t)| {
             t.legacy.self_thread.is_some()
                 && &t.legacy.self_thread.as_ref().unwrap().id_str == thread_id
         })
-        .map(|(tid, t)| tid.to_owned())
+        .map(|(tid, _t)| tid.to_owned())
         .collect::<Vec<u64>>();
     if with_same_id.len() == 1 {
         None

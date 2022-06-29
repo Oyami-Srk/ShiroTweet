@@ -1,9 +1,7 @@
-use crate::tweet_parser::TweetMedia;
 use crate::utils::extract_twitter_url;
 use crate::Error;
 use anyhow::Result;
-use chrono::{DateTime, Local};
-use log::{debug, error};
+use log::error;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::params;
 use std::path::Path;
@@ -137,9 +135,12 @@ CREATE TABLE "fail" (
         allow_sql_errcode: Option<rusqlite::ErrorCode>,
     ) {
         if let Some(allow) = allow_sql_errcode {
-            if let rusqlite::Error::SqliteFailure(rusqlite::ffi::Error { code: allow, .. }, _) = err
-            {
-                // allow
+            if let rusqlite::Error::SqliteFailure(rusqlite::ffi::Error { code: c, .. }, _) = err {
+                if c == allow {
+                    // allow
+                } else {
+                    error!("{}: {}", err_title.as_ref(), err.to_string());
+                }
             } else {
                 error!("{}: {}", err_title.as_ref(), err.to_string());
                 panic!();
