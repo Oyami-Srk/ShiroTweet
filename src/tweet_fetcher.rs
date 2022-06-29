@@ -14,7 +14,9 @@ use std::time::Duration;
 
 use crate::utils::extract_twitter_url;
 use log::{debug, error, info, trace, warn};
-use rusqlite::params;
+use r2d2::PooledConnection;
+use r2d2_sqlite::SqliteConnectionManager;
+use rusqlite::{params, MappedRows};
 
 pub struct TweetFetcher {
     browser_instance: Browser,
@@ -292,7 +294,7 @@ impl TweetDownloadDB {
                             id INTEGER PRIMARY KEY NOT NULL UNIQUE,
                             url TEXT NOT NULL UNIQUE,
                             json BLOB NOT NULL,
-                    	    fetch_time	INTEGER NOT NULL DEFAULT strftime ("%s", "now")
+                    	    fetch_time	INTEGER NOT NULL DEFAULT (STRFTIME('%s', 'now'))
                         );
                         "#,
                 )
@@ -314,7 +316,7 @@ impl TweetDownloadDB {
     }
 
     pub fn insert(&self, id: u64, url: &str, json: &str) -> Result<()> {
-        self.conn_pool.get().unwrap().execute(
+        self.conn_pool.get()?.execute(
             r#"INSERT INTO tweet (id, url, json) VALUES (?1, ?2, ?3)"#,
             params![id, url, json],
         )?;
@@ -332,10 +334,23 @@ impl TweetDownloadDB {
 
     pub fn remove(&self, id: u64) -> Result<()> {
         self.conn_pool
-            .get()
-            .unwrap()
+            .get()?
             .execute("DELETE FROM tweet WHERE id = ?1;", params![id])?;
         Ok(())
+    }
+
+    pub fn get_conn(&self) -> Result<PooledConnection<SqliteConnectionManager>> {
+        Ok(self.conn_pool.get()?)
+    }
+
+    pub fn get_urls(&self) -> Result<Vec<String>> {
+        let conn = self.conn_pool.get()?;
+        let mut stmt = conn.prepare(r#"SELECT url FROM tweet"#)?;
+        let r = stmt
+            .query_map([], |row| Ok(row.get(0).unwrap()))?
+            .map(|v| v.unwrap())
+            .collect();
+        Ok(r)
     }
 }
 

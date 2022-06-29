@@ -8,6 +8,10 @@ name = "shirotweet-fetcher"
 path = "src/fetcher.rs"
 
 [[bin]]
+name = "shirotweet-summarizer"
+path = "src/summarizer.rs"
+
+[[bin]]
 name = "shirotweet-downloader"
 path = "src/downloader.rs"
 

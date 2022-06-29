@@ -1,11 +1,10 @@
+#![allow(dead_code, unused)]
 use crate::tweet_db::{Media, ThreadInfo, Tweet, TweetDB, TweetFailReason};
 use crate::tweet_fetcher::{TweetDownloadDB, TweetFetcher};
-use crate::utils::{extract_twitter_url, Error};
+use crate::utils::{extract_twitter_url, read_url_list, Error};
 use anyhow::Result;
-use lazy_static::lazy_static;
 use log::{info, LevelFilter};
 use rayon::prelude::*;
-use regex::Regex;
 use std::io;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -24,11 +23,6 @@ mod utils;
    thread: https://twitter.com/onlyyougts/status/1531582206900064256
 */
 
-lazy_static! {
-    static ref URL_EXTRACTOR: Regex =
-        Regex::new(r#"(https://twitter.com/.*?/status/\d+)\b"#).unwrap();
-}
-
 fn run_url_downloader<P: AsRef<Path>>(
     url_list_path: P,
     dl_db_file_path: P,
@@ -37,9 +31,15 @@ fn run_url_downloader<P: AsRef<Path>>(
     no_login: bool,
     manual_login: bool,
     no_headless: bool,
+    must_login: bool,
 ) -> Result<()> {
-    info!("Setup un-login fetcher.");
-    let unlogin_fetcher = TweetFetcher::new("./chrome-data", !no_headless)?;
+    let unlogin_fetcher = if must_login {
+        None
+    } else {
+        info!("Setup un-login fetcher.");
+        Some(TweetFetcher::new("./chrome-data", !no_headless)?)
+    };
+
     let logged_in_fetcher = if no_login {
         None
     } else {
@@ -60,7 +60,7 @@ fn run_url_downloader<P: AsRef<Path>>(
                 } else {
                     println!("You are not specified to manually login. But no username given.");
                     print!("Enter your username (empty to use manual login): ");
-                    std::io::stdout().flush().unwrap();
+                    io::stdout().flush().unwrap();
                     let mut username = String::new();
                     io::stdin().read_line(&mut username).unwrap();
                     if username.ends_with('\n') {
@@ -76,7 +76,7 @@ fn run_url_downloader<P: AsRef<Path>>(
                     } else {
                         loop {
                             print!("Enter your password please: ");
-                            std::io::stdout().flush().unwrap();
+                            io::stdout().flush().unwrap();
                             let password = if let Ok(s) = read_password() {
                                 s
                             } else {
@@ -110,33 +110,16 @@ fn run_url_downloader<P: AsRef<Path>>(
         false
     };
 
+    let urls = read_url_list(url_list_path)?;
     let db = TweetDB::new(tw_db_file_path.as_ref())?;
     let dldb = TweetDownloadDB::new(dl_db_file_path);
-
-    info!("Reading url list from {}", url_list_path.as_ref().display());
-    let mut urls = std::fs::read_to_string(url_list_path)?
-        .lines()
-        .map(|v| {
-            if let Some(m) = URL_EXTRACTOR.captures(v) {
-                Some(m.get(1).unwrap().as_str().to_string())
-            } else {
-                None
-            }
-        })
-        .filter(|p| p.is_some())
-        .map(|p| p.unwrap())
-        .collect::<Vec<String>>();
-    info!("Raw has {} entries.", urls.len());
-    urls.sort();
-    urls.dedup();
-    info!("Sorted and deduped has {} entries.", urls.len());
 
     let urls = if is_tw_db_existed {
         info!("TweetDB is already existed. Remove item that already in db.");
         let urls = urls
             .into_par_iter()
             .filter(|p| {
-                let id = utils::extract_twitter_url(p).unwrap().1;
+                let id = extract_twitter_url(p).unwrap().1;
                 !db.is_exist(id)
             })
             .collect::<Vec<String>>();
@@ -147,19 +130,7 @@ fn run_url_downloader<P: AsRef<Path>>(
     let total_len = urls.len();
     info!("{} to be downloaded.", total_len);
 
-    info!("Using non-login fetcher for the first round.");
-
-    let (succeed, failed) =
-        tweet_fetcher::fetch_url_lists_to_sqlite(&unlogin_fetcher, urls, &dldb)?;
-    info!(
-        "Non-login succeed: {}, failed: {}, expected total: {}, actual total: {}. (Succeed is not always useful...)",
-        succeed.len(),
-        failed.len(),
-        total_len,
-        succeed.len() + failed.len()
-    );
-
-    let remaining = Arc::new(Mutex::new(Vec::from(failed)));
+    let remaining = Arc::new(Mutex::new(Vec::new()));
 
     let success_count = Arc::new(Mutex::new(0));
     let account_suspended_count = Arc::new(Mutex::new(0));
@@ -271,18 +242,34 @@ fn run_url_downloader<P: AsRef<Path>>(
     };
 
     let progress_count = Arc::new(Mutex::new(0));
-    let total = succeed.len();
-    info!("Try parse and move succeed items to TweetDB.");
-    succeed.iter().for_each(|url| {
-        let mut progress_count = progress_count.lock().unwrap();
-        *progress_count += 1;
-        info!("[{}/{}] Processing {}", progress_count, total, url);
-        drop(progress_count);
-        processor(url.as_str(), true);
-    });
+    if let Some(fetcher) = unlogin_fetcher {
+        info!("Using non-login fetcher for the first round.");
 
-    info!("Total: {}", progress_count.lock().unwrap());
-    status_printer();
+        let (succeed, failed) = tweet_fetcher::fetch_url_lists_to_sqlite(&fetcher, urls, &dldb)?;
+        info!(
+            "Non-login succeed: {}, failed: {}, expected total: {}, actual total: {}. (Succeed is not always useful...)",
+            succeed.len(),
+            failed.len(),
+            total_len,
+            succeed.len() + failed.len()
+        );
+
+        let total = succeed.len();
+        info!("Try parse and move succeed items to TweetDB.");
+        succeed.iter().for_each(|url| {
+            let mut progress_count = progress_count.lock().unwrap();
+            *progress_count += 1;
+            info!("[{}/{}] Processing {}", progress_count, total, url);
+            drop(progress_count);
+            processor(url.as_str(), true);
+        });
+
+        remaining.lock().unwrap().extend(failed.into_iter());
+        info!("Total: {}", progress_count.lock().unwrap());
+        status_printer();
+    } else {
+        remaining.lock().unwrap().extend(urls.into_iter());
+    }
 
     let mut retries = 0;
 
@@ -364,6 +351,8 @@ struct Args {
     #[clap(long, action)]
     manual_login: bool,
     #[clap(long, action)]
+    must_login: bool,
+    #[clap(long, action)]
     no_headless: bool,
 }
 
@@ -403,6 +392,7 @@ fn main() {
         args.no_login,
         args.manual_login,
         args.no_headless,
+        args.must_login,
     ) {
         panic!("Error happen when run url downloader: {}", e);
     }

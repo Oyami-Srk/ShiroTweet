@@ -1,6 +1,11 @@
 use crate::tweet_db::TweetFailReason;
 use crate::twitter_def;
+use anyhow::Result;
+use lazy_static::lazy_static;
+use log::info;
+use regex::Regex;
 use std::fmt::{Display, Formatter};
+use std::path::Path;
 
 #[derive(Debug)]
 #[allow(unused)]
@@ -90,4 +95,30 @@ pub fn extract_twitter_url(url: &str) -> Option<(&str, u64)> {
     } else {
         None
     }
+}
+
+lazy_static! {
+    static ref URL_EXTRACTOR: Regex =
+        Regex::new(r#"(https://twitter.com/.*?/status/\d+)\b"#).unwrap();
+}
+
+pub fn read_url_list<P: AsRef<Path>>(url_list_path: P) -> Result<Vec<String>> {
+    info!("Reading url list from {}", url_list_path.as_ref().display());
+    let mut urls = std::fs::read_to_string(url_list_path)?
+        .lines()
+        .map(|v| {
+            if let Some(m) = URL_EXTRACTOR.captures(v) {
+                Some(m.get(1).unwrap().as_str().to_string())
+            } else {
+                None
+            }
+        })
+        .filter(|p| p.is_some())
+        .map(|p| p.unwrap())
+        .collect::<Vec<String>>();
+    info!("Raw has {} entries.", urls.len());
+    urls.sort();
+    urls.dedup();
+    info!("Sorted and deduped has {} entries.", urls.len());
+    Ok(urls)
 }

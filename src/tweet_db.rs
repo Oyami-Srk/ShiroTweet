@@ -1,5 +1,6 @@
 use crate::utils::extract_twitter_url;
-use crate::Error;
+use crate::utils::Error;
+use crate::utils::Error::{TweetRestricted, TwitterAccountNotExisted, TwitterAccountSuspended};
 use anyhow::Result;
 use log::error;
 use r2d2_sqlite::SqliteConnectionManager;
@@ -49,6 +50,32 @@ impl ToString for TweetFailReason {
             Self::AccountNotExisted => "account not existed",
         }
         .into()
+    }
+}
+
+impl Into<Error> for TweetFailReason {
+    fn into(self) -> Error {
+        match self {
+            Self::Restricted => Error::TweetRestricted,
+            Self::Deleted => Error::TweetNotExists,
+            Self::AccountSuspended => Error::TwitterAccountSuspended,
+            Self::AccountNotExisted => Error::TwitterAccountNotExisted,
+        }
+    }
+}
+
+impl TryFrom<String> for TweetFailReason {
+    type Error = ();
+
+    fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
+        let value = value.as_str();
+        match value {
+            "restricted" => Ok(Self::Restricted),
+            "deleted" => Ok(Self::Deleted),
+            "account suspended" => Ok(Self::AccountSuspended),
+            "account not existed" => Ok(Self::AccountNotExisted),
+            _ => Err(()),
+        }
     }
 }
 
@@ -167,6 +194,44 @@ CREATE TABLE "fail" (
         }
     }
 
+    pub fn get_tweet(&self, id: u64) -> Result<Tweet> {
+        let conn = self.conn_pool.get().unwrap();
+        let t = conn.query_row(
+            "SELECT author, content, create_time FROM tweet WHERE id = ?",
+            params![id],
+            |row| {
+                Ok(Tweet {
+                    id,
+                    author: row.get(0)?,
+                    content: row.get(1)?,
+                    create_time: row.get(2)?,
+                })
+            },
+        );
+        if let Err(e) = t {
+            let err: String = if let Ok(err) = conn.query_row(
+                "SELECT type FROM fail WHERE tweet_id = ?",
+                params![id],
+                |row| Ok(row.get(0)?),
+            ) {
+                err
+            } else {
+                return Err(Error::CustomError {
+                    msg: "Not exists in TwDB.".to_string(),
+                }
+                .into());
+            };
+            if let Ok(fail) = TweetFailReason::try_from(err) {
+                let err: Error = fail.into();
+                Err(err.into())
+            } else {
+                Err(Error::DBError.into())
+            }
+        } else {
+            Ok(t.unwrap())
+        }
+    }
+
     pub fn insert_media(&self, media: &Media) {
         let conn = self.conn_pool.get().unwrap();
         if let Err(e) = conn.execute(
@@ -189,6 +254,28 @@ CREATE TABLE "fail" (
                 Some(rusqlite::ErrorCode::ConstraintViolation),
             );
         }
+    }
+
+    pub fn get_medias(&self, tweet_id: u64) -> Result<Vec<Media>> {
+        let conn = self.conn_pool.get().unwrap();
+        let mut stmt =
+            conn.prepare("SELECT id, url, width, height, no, type FROM media WHERE tweet_id=?;")?;
+        let result = stmt
+            .query_map(params![tweet_id], |row| {
+                Ok(Media {
+                    id: row.get(0)?,
+                    tweet_id,
+                    url: row.get(1)?,
+                    width: row.get(2)?,
+                    height: row.get(3)?,
+                    no: row.get(4)?,
+                    _type: row.get(5)?,
+                })
+            })?
+            .map(|v| v.unwrap())
+            .collect();
+
+        Ok(result)
     }
 
     pub fn insert_thread(&self, thread_info: &ThreadInfo) {
