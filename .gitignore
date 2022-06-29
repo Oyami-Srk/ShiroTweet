@@ -1,5 +1,7 @@
 /target
 Cargo.lock
+sample_data
+TweetMedias
 *.json
 *.sqlite
 *.log

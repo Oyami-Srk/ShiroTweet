@@ -3,6 +3,7 @@ use crate::utils::Error;
 use crate::utils::Error::{TweetRestricted, TwitterAccountNotExisted, TwitterAccountSuspended};
 use anyhow::Result;
 use log::error;
+use r2d2::PooledConnection;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::params;
 use std::path::Path;
@@ -309,5 +310,9 @@ CREATE TABLE "fail" (
         ) {
             error!("Error when inserting fail {}: {}", url, e.to_string());
         }
+    }
+
+    pub fn get_db_conn(&self) -> PooledConnection<SqliteConnectionManager> {
+        self.conn_pool.get().unwrap()
     }
 }

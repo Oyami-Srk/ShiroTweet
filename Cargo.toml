@@ -27,9 +27,12 @@ regex = "1.5"
 lazy_static = "1.4"
 rusqlite = "0.27"
 indicatif = "0.17.0-rc.11"
+console = "0.15"
 chrono = "0.4"
 rayon = "1.5"
 r2d2 = "0.8"
 r2d2_sqlite = "0.20"
 clap = { version = "3.2", features = ["derive"] }
 rpassword = "6.0"
+#shirodl = { git = "https://github.com/Oyami-Srk/shirodl" }
+shirodl = { path = "../shirodl" }
