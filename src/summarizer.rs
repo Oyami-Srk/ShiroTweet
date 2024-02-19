@@ -179,7 +179,7 @@ fn main() {
 
     let args: Args = Args::parse();
 
-    let file_checker = |p, file_usage| {
+    let file_checker = |p: &PathBuf, file_usage| {
         if !p.exists() || !p.is_file() {
             Args::command()
                 .error(
@@ -190,9 +190,9 @@ fn main() {
         }
     };
 
-    file_checker(args.url_list, "Url list file");
-    file_checker(args.tweet_db, "TweetDB file");
-    file_checker(args.download_db, "DownloadDB file");
+    file_checker(&args.url_list, "Url list file");
+    file_checker(&args.tweet_db, "TweetDB file");
+    file_checker(&args.download_db, "DownloadDB file");
 
     // run_dl_db_parser("./dl.sqlite");
     if let Err(e) = run_summarizer(args.url_list, args.download_db, args.tweet_db) {

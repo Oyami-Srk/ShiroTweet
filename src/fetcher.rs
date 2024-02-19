@@ -1,14 +1,20 @@
 #![allow(dead_code, unused)]
-use crate::tweet_db::{Media, ThreadInfo, Tweet, TweetDB, TweetFailReason};
-use crate::tweet_fetcher::{TweetDownloadDB, TweetFetcher};
-use crate::utils::{extract_twitter_url, read_url_list, Error};
-use anyhow::Result;
-use log::{info, LevelFilter};
-use rayon::prelude::*;
+
 use std::io;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+
+use anyhow::Result;
+use clap::{CommandFactory, Parser, ValueHint};
+use log::{error, info, LevelFilter, trace};
+use rayon::prelude::*;
+use rpassword::read_password;
+
+use crate::tweet_db::{Media, ThreadInfo, Tweet, TweetDB, TweetFailReason};
+use crate::tweet_fetcher::{TweetDownloadDB, TweetFetcher};
+use crate::tweet_parser::TweetItem;
+use crate::utils::{Error, extract_twitter_url, read_url_list};
 
 mod tweet_db;
 mod tweet_fetcher;
@@ -37,14 +43,20 @@ fn run_url_downloader<P: AsRef<Path>>(
         None
     } else {
         info!("Setup un-login fetcher.");
-        Some(TweetFetcher::new("./chrome-data", !no_headless)?)
+        Some(TweetFetcher::new(
+            "D:\\Projects\\shirotweets\\chrome-data",
+            !no_headless,
+        )?)
     };
 
     let logged_in_fetcher = if no_login {
         None
     } else {
         info!("Setup logged in fetcher");
-        let fetcher = TweetFetcher::new("./chrome-data-logined", !no_headless)?;
+        let fetcher = TweetFetcher::new(
+            "D:\\Projects\\shirotweets\\chrome-data-logined",
+            !no_headless,
+        )?;
         if let Some(username) = fetcher.get_username()? {
             info!("Alread logged in as user `{}`", username);
         } else {
@@ -167,6 +179,7 @@ fn run_url_downloader<P: AsRef<Path>>(
         );
 
         if let Ok(tweet) = tweets_result {
+            trace!("Tweet process OK for url: {}", url);
             // Tweet OK
             let thread = tweet_parser::get_thread(id, &tweet);
             let (tweets, medias, threads) = if let Some(ids) = thread {
@@ -207,6 +220,11 @@ fn run_url_downloader<P: AsRef<Path>>(
             *success_count.lock().unwrap() += 1;
         } else {
             let err = tweets_result.err().unwrap();
+            trace!(
+                "Tweet process FAILED for url: {}. Error: {}",
+                url,
+                err.to_string()
+            );
             // println!("Failed, because: {}", err.to_string());
             if let Some(err) = err.downcast_ref::<Error>() {
                 if let Some(fail) = err.try_make_fail_reason() {
@@ -237,11 +255,14 @@ fn run_url_downloader<P: AsRef<Path>>(
                 } else {
                     remaining.lock().unwrap().push(url.to_string());
                 }
+            } else {
+                error!("Not a known error: {}", err);
             }
         }
     };
 
     let progress_count = Arc::new(Mutex::new(0));
+    let mut clean = false;
     if let Some(fetcher) = unlogin_fetcher {
         info!("Using non-login fetcher for the first round.");
 
@@ -267,6 +288,8 @@ fn run_url_downloader<P: AsRef<Path>>(
         remaining.lock().unwrap().extend(failed.into_iter());
         info!("Total: {}", progress_count.lock().unwrap());
         status_printer();
+
+        clean = true;
     } else {
         remaining.lock().unwrap().extend(urls.into_iter());
     }
@@ -275,6 +298,7 @@ fn run_url_downloader<P: AsRef<Path>>(
 
     if let Some(logged_in_fetcher) = logged_in_fetcher {
         while !remaining.lock().unwrap().is_empty() && retries < 5 {
+            trace!("Not null, retries {}", retries);
             let mut remaining = remaining.lock().unwrap();
             info!("Remaining tweets: {}", remaining.len());
             info!("Using logged in fetcher.");
@@ -282,11 +306,13 @@ fn run_url_downloader<P: AsRef<Path>>(
                 info!("Retry times: {}", retries);
             }
             retries += 1;
-            info!("Clear old download db entries.");
-            remaining.iter().for_each(|url| {
-                let id = extract_twitter_url(url).unwrap().1;
-                dldb.remove(id).unwrap();
-            });
+            if clean {
+                info!("Clear old download db entries.");
+                remaining.iter().for_each(|url| {
+                    let id = extract_twitter_url(url).unwrap().1;
+                    dldb.remove(id).unwrap();
+                });
+            }
             info!("Run fetcher");
             let total_len = remaining.len();
             let (succeed, failed) = tweet_fetcher::fetch_url_lists_to_sqlite(
@@ -304,6 +330,7 @@ fn run_url_downloader<P: AsRef<Path>>(
 
             remaining.clear();
             remaining.extend(failed.into_iter());
+            drop(remaining);
 
             info!("Try parse and move succeed items to TweetDB.");
             *progress_count.lock().unwrap() = 0;
@@ -317,6 +344,8 @@ fn run_url_downloader<P: AsRef<Path>>(
             });
             info!("Total: {}", progress_count.lock().unwrap());
             status_printer();
+
+            clean = true;
         }
     }
 
@@ -326,10 +355,6 @@ fn run_url_downloader<P: AsRef<Path>>(
     });
     Ok(())
 }
-
-use crate::tweet_parser::TweetItem;
-use clap::{CommandFactory, Parser, ValueHint};
-use rpassword::read_password;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -367,7 +392,7 @@ fn main() {
                 record.args()
             )
         })
-        .filter_module("shirotweet_fetcher", LevelFilter::Info)
+        .filter_module("shirotweet_fetcher", LevelFilter::Trace)
         // .filter_module("headless_chrome", LevelFilter::Debug)
         .init();
     info!("ShiroTweets version {}", env!("CARGO_PKG_VERSION"));

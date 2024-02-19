@@ -1,22 +1,24 @@
-use super::twitter_def;
-use super::utils::Error;
-use anyhow::Result;
-use headless_chrome::protocol::cdp::Fetch::{RequestPattern, RequestStage};
-use headless_chrome::protocol::cdp::Network::ResourceType;
-use headless_chrome::{Browser, LaunchOptions};
-use lazy_static::lazy_static;
-use regex::Regex;
 use std::io::Write;
 use std::path::Path;
 use std::sync::mpsc;
 use std::thread::sleep;
 use std::time::Duration;
 
-use crate::utils::extract_twitter_url;
+use anyhow::Result;
+use headless_chrome::{Browser, LaunchOptions};
+use headless_chrome::protocol::cdp::Fetch::{RequestPattern, RequestStage};
+use headless_chrome::protocol::cdp::Network::ResourceType;
+use lazy_static::lazy_static;
 use log::{debug, error, info, trace, warn};
 use r2d2::PooledConnection;
 use r2d2_sqlite::SqliteConnectionManager;
-use rusqlite::{params, MappedRows};
+use regex::Regex;
+use rusqlite::params;
+
+use crate::utils::extract_twitter_url;
+
+use super::twitter_def;
+use super::utils::Error;
 
 pub struct TweetFetcher {
     browser_instance: Browser,
@@ -28,6 +30,8 @@ impl TweetFetcher {
             headless,
             idle_browser_timeout: Duration::from_secs(24 * 60 * 60),
             user_data_dir: Some(user_data_dir.as_ref().to_path_buf()),
+            // port: Some(23333),
+            // sandbox: false,
             ..Default::default()
         })?;
         // nap a gap
@@ -40,17 +44,23 @@ impl TweetFetcher {
     pub fn get_username(&self) -> Result<Option<String>> {
         const ANALYTICS_URL: &str = "https://analytics.twitter.com/";
         const ANALYTICS_NONE_URL: &str = "https://analytics.twitter.com/about";
-        let tab = self.browser_instance.wait_for_initial_tab()?;
+        // let tab = self.browser_instance.wait_for_initial_tab()?;
+        let tab = self.browser_instance.new_tab()?;
         tab.navigate_to(ANALYTICS_URL)?;
         tab.wait_until_navigated()?;
         let jump_url = tab.get_url();
         if jump_url.contains(ANALYTICS_NONE_URL) {
             Ok(None)
         } else {
+            if jump_url.ends_with("twitter.com/") {
+                tab.wait_until_navigated()?;
+            }
+            let jump_url = tab.get_url();
             lazy_static! {
                 static ref REGEXP: Regex =
                     Regex::new(r#"https://analytics.twitter.com/user/(.*?)/"#).unwrap();
             }
+            trace!("Jumped url is {}", jump_url.as_str());
             if let Some(cap) = REGEXP.captures(jump_url.as_str()) {
                 if let Some(username) = cap.get(1).map(|v| v.as_str()) {
                     return Ok(Some(username.to_string()));
@@ -170,11 +180,19 @@ impl TweetFetcher {
         let (tx, rx) = mpsc::sync_channel::<String>(1);
 
         const PATTERN_TWITTER_DETAILS: &str = "https://twitter.com/i/api/graphql/*";
-        let patterns = vec![RequestPattern {
-            url_pattern: Some(PATTERN_TWITTER_DETAILS.to_string()),
-            resource_Type: Some(ResourceType::Xhr),
-            request_stage: Some(RequestStage::Response),
-        }];
+        const PATTERN_TWITTER_DETAILS2: &str = "https://api.twitter.com/graphql/*";
+        let patterns = vec![
+            RequestPattern {
+                url_pattern: Some(PATTERN_TWITTER_DETAILS.to_string()),
+                resource_Type: Some(ResourceType::Xhr),
+                request_stage: Some(RequestStage::Response),
+            },
+            RequestPattern {
+                url_pattern: Some(PATTERN_TWITTER_DETAILS2.to_string()),
+                resource_Type: Some(ResourceType::Xhr),
+                request_stage: Some(RequestStage::Response),
+            },
+        ];
         tab.enable_fetch(Some(&patterns), Some(false))?;
 
         let url_owned = url.to_owned();
@@ -183,7 +201,9 @@ impl TweetFetcher {
             "handler",
             Box::new(move |resp, fetch_body| {
                 let req_url = resp.response.url.as_str();
+                // trace!("Request Url: {}", req_url);
                 if twitter_def::TWEET_JSON_URL_REGEXP.is_match(req_url) {
+                    // trace!("Request Url: {} is matched!!!", req_url);
                     // contains what we need
                     sleep(Duration::from_millis(10));
                     let mut retries_counter = 0;
@@ -192,13 +212,15 @@ impl TweetFetcher {
                         if body.is_ok() {
                             break body.unwrap();
                         } else if retries_counter > 6 {
-                            trace!("Give up for {}", url_owned);
+                            // trace!("Give up for {}", url_owned);
                             return;
                         }
                         retries_counter += 1;
                         sleep(Duration::from_millis(500));
                     };
-                    tx.send(body.body).unwrap();
+                    if let Err(e) = tx.send(body.body) {
+                        error!("Error sending body to receiver: {}", e);
+                    }
                 }
             }),
         )?;
@@ -304,6 +326,7 @@ impl TweetDownloadDB {
     }
 
     pub fn is_exist(&self, id: u64) -> bool {
+        // trace!("Calling is_exist...");
         self.conn_pool
             .get()
             .unwrap()

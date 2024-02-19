@@ -17,6 +17,7 @@ pub enum Error {
     TwitterAccountNotExisted,
     TweetAdultContent,
     TweetRestricted,
+    TweetIllegalBan,
     NotATweet,
     TweetParseFailed(Option<String>),
     TweetUnknownError(String),
@@ -36,6 +37,7 @@ impl Display for Error {
             Error::TweetNotExists => write!(f, "Tweet does not exist."),
             Error::TwitterAccountSuspended => write!(f, "Twitter accound is suspended."),
             Error::TweetRestricted => write!(f, "Tweet is restricted by author."),
+            Error::TweetIllegalBan => write!(f, "Tweet is banned for illegal content."),
             Error::NotATweet => write!(f, "Url is not a tweet link."),
             Error::JsonFailed(msg) => {
                 if let Some(msg) = msg {
@@ -72,6 +74,7 @@ impl Error {
             Self::TweetNotExists => Some(TweetFailReason::Deleted),
             Self::TwitterAccountSuspended => Some(TweetFailReason::AccountSuspended),
             Self::TwitterAccountNotExisted => Some(TweetFailReason::AccountNotExisted),
+            Self::TweetIllegalBan => Some(TweetFailReason::Deleted),
             _ => None,
         }
     }

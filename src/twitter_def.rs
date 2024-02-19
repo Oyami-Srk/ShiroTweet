@@ -13,15 +13,18 @@ pub const LOGIN_BUTTON_SELECTOR_LOGIN: &'static str =
     r#"div[role="button"][data-testid="LoginForm_Login_Button"]"#;
 lazy_static! {
     pub static ref TWEET_JSON_URL_REGEXP: Regex =
-        Regex::new(r#"https://twitter.com/i/api/graphql/.*?/TweetDetail"#).unwrap();
+        Regex::new(r#"https://(api\.)?twitter.com/(i/api/)?graphql/.*?/TweetDetail"#).unwrap();
     pub static ref TWEET_URL_EXTRACTOR: Regex =
         Regex::new(r#"https://twitter.com/(.*?)/status/(\d*)"#).unwrap();
 }
 
-pub const TEXT_TOMBSTONE_ACCOUNT_SUSPENDED: &'static str = r#"这条推文来自一个已冻结的账号"#;
-pub const TEXT_TOMBSTONE_ACCOUNT_NOT_EXISTED: &'static str = r#"这条推文来自一个已不存在的账号。"#;
+pub const TEXT_TOMBSTONE_ACCOUNT_SUSPENDED: &'static str = r#"这个帖子来自一个被冻结的账号。"#;
+pub const TEXT_TOMBSTONE_ACCOUNT_NOT_EXISTED: &'static str = r#"这个帖子来自一个已不存在的账号。"#;
 pub const TEXT_TOMBSTONE_AUDLT_CONTENT: &'static str =
     r#"受年龄限制的成人内容。这些内容可能不适合 18 岁以下的用户。"#;
 pub const TEXT_TOMBSTONE_USER_RESTRICTED: &'static str =
-    r#"该账号所有者限制了可以查看其推文的用户。"#;
+    r#"该账号所有者限制了可以查看其帖子的用户。"#;
+
+pub const TEXT_TOMBSTONE_TWEET_ILLEGAL: &'static str = r#"这条推文违反了 Twitter 规则"#;
+pub const TEXT_TOMBSTONE_TWEET_NOT_AVALIABLE: &'static str = r#"此推文不可用"#;
 pub const TWEET_ERROR_MESSAGE_DELETED: &'static str = r#"_Missing: No status found with that ID."#;

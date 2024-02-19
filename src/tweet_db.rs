@@ -157,6 +157,16 @@ CREATE TABLE "fail" (
         .unwrap()
     }
 
+    pub fn is_restricted(&self, id: u64) -> bool {
+        let conn = self.conn_pool.get().unwrap();
+        conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM fail WHERE tweet_id=?1 AND type='restricted');",
+            params![id],
+            |v| v.get(0),
+        )
+            .unwrap()
+    }
+
     fn do_rusqlite_error<S: AsRef<str>>(
         err_title: S,
         err: rusqlite::Error,

@@ -101,6 +101,7 @@ fn run_downloader<P: AsRef<Path>>(twdb: P, dest_dir: P) -> Result<()> {
         let mut downloader = shirodl::Downloader::new();
         downloader.set_destination(dest_dir.to_path_buf());
         downloader.set_auto_rename(false);
+        downloader.set_timeout(Duration::from_secs(60));
         let bar = ProgressBar::new(tasks.len() as u64);
         while !tasks.is_empty() {
             downloader.append_task(tasks.pop().unwrap());
@@ -179,7 +180,7 @@ fn run_downloader<P: AsRef<Path>>(twdb: P, dest_dir: P) -> Result<()> {
 
     if !unrecoverables.is_empty() {
         let save_file = chrono::Local::now()
-            .format("%Y-%m-%d %H:%M:%S TweetDownloadFailures.txt")
+            .format("%Y-%m-%d %H%M%S TweetDownloadFailures.txt")
             .to_string();
         println!(
             "There are {} item cannot be download. Saved to file {}.",

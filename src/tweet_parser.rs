@@ -1,12 +1,14 @@
-use crate::tweet_db::{Media, ThreadInfo, Tweet};
-use crate::twitter_def;
-use crate::utils::Error;
+use std::collections::HashMap;
+use std::fmt::Formatter;
+
 use anyhow::Result;
 use chrono::DateTime;
 use log::{error, trace, warn};
 use serde::Deserialize;
-use std::collections::HashMap;
-use std::fmt::Formatter;
+
+use crate::tweet_db::{Media, ThreadInfo, Tweet};
+use crate::twitter_def;
+use crate::utils::Error;
 
 type JObj = serde_json::Value;
 type JRawValue = serde_json::value::RawValue;
@@ -47,8 +49,10 @@ pub struct TweetMedia {
     #[serde(rename = "type")]
     pub _type: String,
     pub url: String,
-    pub features: Box<JRawValue>, // don't need
-    pub sizes: Box<JRawValue>,    // don't need
+    // don't need
+    pub features: Option<Box<JRawValue>>,
+    // don't need
+    pub sizes: Option<Box<JRawValue>>,
     pub original_info: TweetMediaOriginalInfo,
     // only existed in extended_entities
     pub video_info: Option<TweetVideoInfo>,
@@ -85,7 +89,7 @@ pub struct TweetLegacy {
     pub user_id_str: String,
     pub conversation_id_str: String,
     pub full_text: String,
-    pub source: String,
+    pub source: Option<String>,
     pub lang: String,
     pub display_text_range: Vec<u64>,
     pub favorite_count: u64,
@@ -132,11 +136,15 @@ pub struct TweetCore {
 
 #[derive(Deserialize)]
 pub struct TweetItem {
-    #[serde(rename = "__typename")]
+    #[serde(rename = "__typename", default = "tweet_type_default")]
     pub type_name: String,
     pub rest_id: String,
     pub core: TweetCore,
     pub legacy: TweetLegacy,
+}
+
+fn tweet_type_default() -> String {
+    "Tweet".to_string()
 }
 
 impl std::fmt::Debug for TweetItem {
@@ -301,7 +309,12 @@ pub fn extract_all_tweets(id: u64, obj: &JObj) -> Result<HashMap<u64, TweetItem>
 
         if content["entryType"] == "TimelineTimelineItem" {
             // single item
-            let tweet = &content["itemContent"]["tweet_results"]["result"];
+            let mut tweet = &content["itemContent"]["tweet_results"]["result"];
+            let mut nested = false;
+            if tweet["__typename"] == "TweetWithVisibilityResults" {
+                tweet = &tweet["tweet"];
+                nested = true;
+            }
             if tweet["__typename"] != "Tweet" {
                 if tweet["__typename"] == "TweetTombstone" {
                     let tweet_id = "tweet-".to_string() + &id.to_string();
@@ -309,7 +322,11 @@ pub fn extract_all_tweets(id: u64, obj: &JObj) -> Result<HashMap<u64, TweetItem>
                     if tombstone["__typename"] == "TextTombstone" {
                         let text = tombstone["text"]["text"].as_str().unwrap_or("");
                         trace!("TextTombstone: {}: {}", entry["entryId"], text);
-                        if entry["entryId"] == tweet_id {
+                        if entry["entryId"]
+                            .as_str()
+                            .unwrap()
+                            .eq_ignore_ascii_case(&tweet_id)
+                        {
                             if text.contains(twitter_def::TEXT_TOMBSTONE_ACCOUNT_SUSPENDED) {
                                 return Err(Error::TwitterAccountSuspended.into());
                             } else if text.contains(twitter_def::TEXT_TOMBSTONE_AUDLT_CONTENT) {
@@ -319,6 +336,11 @@ pub fn extract_all_tweets(id: u64, obj: &JObj) -> Result<HashMap<u64, TweetItem>
                             } else if text.contains(twitter_def::TEXT_TOMBSTONE_ACCOUNT_NOT_EXISTED)
                             {
                                 return Err(Error::TwitterAccountNotExisted.into());
+                            } else if text.contains(twitter_def::TEXT_TOMBSTONE_TWEET_ILLEGAL) {
+                                return Err(Error::TweetIllegalBan.into());
+                            } else if text.contains(twitter_def::TEXT_TOMBSTONE_TWEET_NOT_AVALIABLE)
+                            {
+                                return Err(Error::TweetNotExists.into());
                             } else {
                                 return Err(Error::TweetUnknownError(text.to_string()).into());
                             }
@@ -330,12 +352,14 @@ pub fn extract_all_tweets(id: u64, obj: &JObj) -> Result<HashMap<u64, TweetItem>
                         .into());
                     }
                 }
-                trace!(
-                    "Entry {} is not a tweet, but {}.",
-                    entry["entryId"],
-                    tweet["__typename"]
-                );
-                continue;
+                if !nested {
+                    trace!(
+                        "Entry {} is not a tweet, but {}.",
+                        entry["entryId"],
+                        tweet["__typename"]
+                    );
+                    continue;
+                }
             }
             let tweet = TweetItem::deserialize(tweet).or_else(|v| {
                 error!("{}", v);
@@ -355,15 +379,22 @@ pub fn extract_all_tweets(id: u64, obj: &JObj) -> Result<HashMap<u64, TweetItem>
             }
             let items = items.unwrap();
             for item in items {
-                let tweet = &item["item"]["itemContent"]["tweet_results"]["result"];
+                let mut tweet = &item["item"]["itemContent"]["tweet_results"]["result"];
+                let mut nested = false;
+                if tweet["__typename"] == "TweetWithVisibilityResults" {
+                    tweet = &tweet["tweet"];
+                    nested = true;
+                }
                 if tweet["__typename"] != "Tweet" {
-                    trace!(
-                        "Entry {}, item {} is not a tweet. but {}.",
-                        entry["entryId"],
-                        item["entryId"],
-                        tweet["__typename"]
-                    );
-                    continue;
+                    if !nested {
+                        trace!(
+                            "Entry {}, item {} is not a tweet. but {}.",
+                            entry["entryId"],
+                            item["entryId"],
+                            tweet["__typename"]
+                        );
+                        continue;
+                    }
                 }
                 let tweet = TweetItem::deserialize(tweet).or_else(|v| {
                     error!("{}", v);
