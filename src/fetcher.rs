@@ -38,13 +38,16 @@ fn run_url_downloader<P: AsRef<Path>>(
     manual_login: bool,
     no_headless: bool,
     must_login: bool,
+    chrome_data_dir: PathBuf,
+    chrome_data_dir_login: PathBuf
 ) -> Result<()> {
     let unlogin_fetcher = if must_login {
         None
     } else {
         info!("Setup un-login fetcher.");
         Some(TweetFetcher::new(
-            "D:\\Projects\\shirotweets\\chrome-data",
+            // "D:\\Projects\\shirotweets\\chrome-data",
+            chrome_data_dir,
             !no_headless,
         )?)
     };
@@ -54,7 +57,8 @@ fn run_url_downloader<P: AsRef<Path>>(
     } else {
         info!("Setup logged in fetcher");
         let fetcher = TweetFetcher::new(
-            "D:\\Projects\\shirotweets\\chrome-data-logined",
+            // "D:\\Projects\\shirotweets\\chrome-data-logined",
+            chrome_data_dir_login,
             !no_headless,
         )?;
         if let Some(username) = fetcher.get_username()? {
@@ -379,6 +383,10 @@ struct Args {
     must_login: bool,
     #[clap(long, action)]
     no_headless: bool,
+    #[clap(long, default_value = "chrome-data", value_hint = ValueHint::DirPath)]
+    chrome_data_dir: PathBuf,
+    #[clap(long, default_value = "chrome-data-login", value_hint = ValueHint::DirPath)]
+    chrome_data_dir_login: PathBuf
 }
 
 fn main() {
@@ -418,6 +426,8 @@ fn main() {
         args.manual_login,
         args.no_headless,
         args.must_login,
+        args.chrome_data_dir,
+        args.chrome_data_dir_login
     ) {
         panic!("Error happen when run url downloader: {}", e);
     }
