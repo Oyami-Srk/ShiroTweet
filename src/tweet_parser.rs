@@ -307,9 +307,17 @@ pub fn extract_all_tweets(id: u64, obj: &JObj) -> Result<HashMap<u64, TweetItem>
             .as_object()
             .ok_or(Error::TweetJsonSchemaInvalid)?;
 
+        let tweet_id = "tweet-".to_string() + &id.to_string();
+
         if content["entryType"] == "TimelineTimelineItem" {
             // single item
             let mut tweet = &content["itemContent"]["tweet_results"]["result"];
+            if(tweet.is_null()) {
+                if entry["entryId"].as_str().unwrap_or("").eq_ignore_ascii_case(&tweet_id) {
+                    trace!("Thread head {} is null. May be an unexisted tweet.", id);
+                    return Err(Error::TweetNotExists.into());
+                }
+            }
             let mut nested = false;
             if tweet["__typename"] == "TweetWithVisibilityResults" {
                 tweet = &tweet["tweet"];
@@ -317,7 +325,6 @@ pub fn extract_all_tweets(id: u64, obj: &JObj) -> Result<HashMap<u64, TweetItem>
             }
             if tweet["__typename"] != "Tweet" {
                 if tweet["__typename"] == "TweetTombstone" {
-                    let tweet_id = "tweet-".to_string() + &id.to_string();
                     let tombstone = tweet["tombstone"].as_object().unwrap();
                     if tombstone["__typename"] == "TextTombstone" {
                         let text = tombstone["text"]["text"].as_str().unwrap_or("");
@@ -327,22 +334,22 @@ pub fn extract_all_tweets(id: u64, obj: &JObj) -> Result<HashMap<u64, TweetItem>
                             .unwrap()
                             .eq_ignore_ascii_case(&tweet_id)
                         {
-                            if text.contains(twitter_def::TEXT_TOMBSTONE_ACCOUNT_SUSPENDED) {
-                                return Err(Error::TwitterAccountSuspended.into());
+                            return if text.contains(twitter_def::TEXT_TOMBSTONE_ACCOUNT_SUSPENDED) {
+                                Err(Error::TwitterAccountSuspended.into())
                             } else if text.contains(twitter_def::TEXT_TOMBSTONE_AUDLT_CONTENT) {
-                                return Err(Error::TweetAdultContent.into());
+                                Err(Error::TweetAdultContent.into())
                             } else if text.contains(twitter_def::TEXT_TOMBSTONE_USER_RESTRICTED) {
-                                return Err(Error::TweetRestricted.into());
+                                Err(Error::TweetRestricted.into())
                             } else if text.contains(twitter_def::TEXT_TOMBSTONE_ACCOUNT_NOT_EXISTED)
                             {
-                                return Err(Error::TwitterAccountNotExisted.into());
+                                Err(Error::TwitterAccountNotExisted.into())
                             } else if text.contains(twitter_def::TEXT_TOMBSTONE_TWEET_ILLEGAL) {
-                                return Err(Error::TweetIllegalBan.into());
+                                Err(Error::TweetIllegalBan.into())
                             } else if text.contains(twitter_def::TEXT_TOMBSTONE_TWEET_NOT_AVALIABLE)
                             {
-                                return Err(Error::TweetNotExists.into());
+                                Err(Error::TweetNotExists.into())
                             } else {
-                                return Err(Error::TweetUnknownError(text.to_string()).into());
+                                Err(Error::TweetUnknownError(text.to_string()).into())
                             }
                         }
                     } else {

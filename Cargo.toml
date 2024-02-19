@@ -19,7 +19,7 @@ path = "src/downloader.rs"
 #headless_chrome = {git = "https://github.com/Oyami-srk/rust-headless-chrome", branch="shiroko-change"}
 #headless_chrome = { path = "../Forks/rust-headless-chrome"}
 #headless_chrome = { git = "https://github.com/atroche/rust-headless-chrome" }
-headless_chrome = "1.0.5"
+headless_chrome = "1.0.9"
 anyhow = "1.0"
 serde = "1.0"
 serde_json = { version = "1.0", features = ["raw_value"] }
